@@ -29,7 +29,15 @@
 
 ## Cohort 3 Presentation
 
-```{r, echo=FALSE}
+```{r, setup_recipes, include = FALSE}
+
+knitr::opts_chunk$set(
+ message = FALSE,
+ cache = TRUE
+)
+```
+
+```{r, library}
 library(tidymodels)
 library(tidyverse)
 library(patchwork)
@@ -53,11 +61,50 @@ style_plot <- function(ylim = c(0,100)){
 
 ### Introduction
 
+-   
+
 ### How is feature engineering defined in TMWR?
 
-### A couple of important points to keep in mind
+-   "Feature engineering encompasses activities that reformat predictor values to make them easier for a model to use effectively. "
+
+-   "This includes transformations and encodings of the data to best represent their important characteristics."
+
+**Or more formally:**
+
+-   "Adjusting and reworking the predictors to enable models to better uncover predictor-response relationships has been termed *feature engineering*." ([Kuhn and Johnson, 2019](http://www.feat.engineering/))
+
+### Examples of feature engineering
+
+"There are many ... examples of preprocessing to build better features for modeling:
+
+-   [Creating a new variable which is the ratio of two predictor variables within a dataset];
+
+-   Correlation between predictors can be reduced via feature extraction or the removal of some predictors;
+
+-   When some predictors have missing values, they can be imputed using a sub-model;
+
+-   Models that use variance-type measures may benefit from coercing the distribution of some skewed predictors to be symmetric by estimating a transformation."
+
+### Where are we in the overall process of building a model?
+
+Going back to the process of building a Machine Learning model (as shown in the slides for the last chapter).
+
+![](images/step_by_step_ml.jpg)
 
 ### Understanding the culinary analogy
+
+```{r}
+# ames_rec <- 
+#   recipe(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type + 
+#            Latitude + Longitude, data = ames_train) %>%
+#   
+#   # a series of steps
+#   step_log(Gr_Liv_Area, base = 10) %>% 
+#   step_other(Neighborhood, threshold = 0.01) %>% 
+#   step_dummy(all_nominal_predictors()) %>% 
+#   step_interact( ~ Gr_Liv_Area:starts_with("Bldg_Type_") ) %>% 
+#   step_ns(Latitude, Longitude, deg_free = 20)
+```
 
 Not a perfect analogy... but a helpful one.
 
@@ -65,27 +112,34 @@ Not a perfect analogy... but a helpful one.
 | In the kitchen                                   | In Recipes                                                                                                                | Recipes function |
 +==================================================+===========================================================================================================================+==================+
 | Write a recipe.                                  | Write a recipe (i.e. a series of steps) which specify how the test and training data will be processed ahead of modeling. | `recipe()`       |
+|                                                  |                                                                                                                           |                  |
+|                                                  | -   e.g. center a variable `v`.                                                                                           |                  |
 +--------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------+------------------+
 | Prepare the ingredients *(following the recipe)* | Based on the training set, estimate any parameters of the steps that will be needed to process data.                      | `prep()`         |
+|                                                  |                                                                                                                           |                  |
+|                                                  | -   e.g. calculate the mean of a variable (`mean(v)`)                                                                     |                  |
 +--------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------+------------------+
 | Cook the food *(following the recipe)*           | Apply the recipe (i.e. each step in order) to process the training or test data.                                          | `bake()`         |
 +--------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------+------------------+
 
-### An overview of the feature engineering process with recipes
+### The simplest illustrative example I could think of with the AMES data
 
-### The simplest example I could think of with the AMES data
+-   **Outcome variable:** `Sale_Price`
 
-#### Import and split the data
+-   **Two predictor variables:**
+
+    -   `Gr_Liv_Area`
+
+    -   `Year_Built`
+
+#### Let's look at the data before deciding how to process it.
 
 ```{r}
 # import the ames data
 data(ames)
 ames_data <- ames 
-```
 
-#### Look at the outcome variable
 
-```{r}
 # create plot base
 p <- ggplot(ames_data, aes(Sale_Price))
 
@@ -116,8 +170,6 @@ p2 <- p +
 p1 + p2 +
   plot_annotation(title = "Sale Price could be log transformed ahead of modelling\n")
 ```
-
-#### Look at the predictor variables
 
 ```{r}
 # create plot base
@@ -191,24 +243,46 @@ p +
        title = "Maybe the year built variable could be centred to make to make\nit easier to interpret model coefficients\n")
 ```
 
-#### Process the data
+#### Processing the data
+
+First, just select the subset of variables we are interested in.
 
 ```{r}
 # focus down on our current variables of interest
 ames_data_focus <- ames_data %>%
   select(Sale_Price, Gr_Liv_Area, Year_Built)
 
+```
+
+**Transforming the outcome variable before we start using `Recipes`**
+
+```{r}
 # log transform the outcome variable
 ames_data_focus <- ames_data_focus %>%  
   mutate(Sale_Price = log10(Sale_Price)) 
+```
 
+Why not transform the outcome variable in the recipe itself:
+
+``` {.r}
+ step_log(Sale_Price, base = 10)
+```
+
+"This will cause a failure when the recipe is applied to new properties when the sale price is not known. Since price is what we are trying to predict, there probably won't be a column in the [test] data for this variable.
+
+For simple transformations of the **outcome** column(s), we strongly suggest that those operations be *conducted outside of the recipe*."
+
+**Splitting the data**
+
+```{r}
 # split the data into training and test sets
 set.seed(123)
 ames_split <- initial_split(ames_data_focus, prop = 0.80, strata = Sale_Price)
 ames_train <- training(ames_split)
 ames_test  <-  testing(ames_split)
-
 ```
+
+#### Writing a simple recipe
 
 ```{r}
 # write a simple recipe
@@ -218,6 +292,8 @@ ames_rec <-
   
   step_log(Gr_Liv_Area, base = 10) %>%    # I think of these as add_step ...
   step_center(Year_Built)
+
+ames_rec
   
 ```
 
@@ -227,12 +303,17 @@ What is being passed through the pipe? What does a recipe object look like?
 str(ames_rec)
 ```
 
+#### Prep the recipe
+
+This includes calculating a mean Year_Built from the training data.
+
 ```{r}
 # prep the recipe
-# this includes calculating a mean Year_Built from the training data
 ames_rec <- prep(ames_rec)
 ames_rec
 ```
+
+Let's confirm what we expected with the centering has happen ...
 
 ```{r}
 # check the mean year built for the different versions of the dataset
@@ -247,6 +328,12 @@ tribble(
 year_built_rec <- tidy(ames_rec, number = 2)
 year_built_rec
 ```
+
+#### Bake the recipe (twice)
+
+-   **First bake:** using the training data.
+
+-   **Second bake:** using the test data.
 
 ```{r}
 # process the training data
@@ -264,6 +351,10 @@ Confirm the value of the mean used to center `Year_Built` in the test dataset.
 ames_test_processed %>% 
   mutate(Year_Built_org = Year_Built + year_built_rec[[1,2]])
 ```
+
+### An overview of the feature engineering process with recipes
+
+![](images/recipe.jpg)
 
 ### Functionality showcased in the chapter
 
